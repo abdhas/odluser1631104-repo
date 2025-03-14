@@ -30,7 +30,7 @@ jobs:
       - name: Run Gulp build
         run: npm run build
 
-      - name: Build and push latest Docker image
+      - name: Build and tag Docker image
         env:
           REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
           REPOSITORY: "prime-website"
@@ -38,8 +38,10 @@ jobs:
         run: |
           cd dist
           IMAGE_TAG=$REGISTRY/$REPOSITORY:${COMMIT_SHA}
-          echo "Building Docker image with tag $IMAGE_TAG"
+          LATEST_TAG=$REGISTRY/$REPOSITORY:latest
+          echo "Building Docker image with tags $IMAGE_TAG and $LATEST_TAG"
           docker build -t $IMAGE_TAG .
+          docker tag $IMAGE_TAG $LATEST_TAG
 
       - name: Download Wiz CLI
         run: curl -o wizcli https://wizcli.app.wiz.io/latest/wizcli && chmod +x wizcli
@@ -69,7 +71,7 @@ jobs:
         with:
           registry: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
 
-      - name: Push the tagged Docker image to Amazon ECR
+      - name: Push Docker images to Amazon ECR
         env:
           REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
           REPOSITORY: "prime-website"
@@ -77,7 +79,10 @@ jobs:
         run: |
           cd dist
           IMAGE_TAG=$REGISTRY/$REPOSITORY:${COMMIT_SHA}
+          LATEST_TAG=$REGISTRY/$REPOSITORY:latest
+          echo "Pushing Docker images: $IMAGE_TAG and $LATEST_TAG"
           docker push $IMAGE_TAG
+          docker push $LATEST_TAG
 
       - name: Verify Docker image
         env:
@@ -87,18 +92,19 @@ jobs:
         run: |
           REPOSITORY_URI=$REGISTRY/$REPOSITORY
           IMAGE_TAG=$REPOSITORY_URI:${COMMIT_SHA}
-          echo "Pulling Docker image with URI: $IMAGE_TAG"
+          LATEST_TAG=$REPOSITORY_URI:latest
+          echo "Pulling Docker images: $IMAGE_TAG and $LATEST_TAG"
           docker pull $IMAGE_TAG
+          docker pull $LATEST_TAG
 
       - name: Trigger AWS App Runner
         env:
           AWS_REGION: "us-east-1"
           SERVICE_ARN: ${{ secrets.APP_RUNNER_SERVICE_ARN }}
           REPOSITORY: "prime-website"
-          COMMIT_SHA: ${{ github.sha }}
           ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
         run: |
-          IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPOSITORY:$COMMIT_SHA
+          IMAGE_URI=$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPOSITORY:latest
           aws apprunner update-service --service-arn $SERVICE_ARN --source-configuration "ImageRepository={ImageIdentifier=\"$IMAGE_URI\",ImageRepositoryType=\"ECR\"}"
 
       - name: Run Wiz CLI image tag
@@ -108,5 +114,5 @@ jobs:
           REPOSITORY: "prime-website"
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          IMAGE_URI=$ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/$REPOSITORY:$COMMIT_SHA
+          IMAGE_URI=$ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/$REPOSITORY:latest
           ./wizcli docker tag -i $IMAGE_URI
